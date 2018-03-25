@@ -1,6 +1,8 @@
 package rangecache
 
-import "testing"
+import (
+	"testing"
+)
 
 var incomingRanges = []struct {
 	description   string
@@ -8,7 +10,16 @@ var incomingRanges = []struct {
 	keyrangeToGet []Keyrange
 	expectedOk    []bool // corresponds to the keyrangeToGet slice
 }{
-	{"same found", []Keyrange{{0, 100}}, []Keyrange{{50, 75}, {75, 100}}, []bool{true, true}},
+	{"exact range match",
+		[]Keyrange{{0, 100}, {50, 75}, {75, 100}},
+		[]Keyrange{{0, 100}, {50, 75}, {75, 100}},
+		[]bool{true, true, true},
+	},
+	/*{"range overlap: range lies completely inside existing range",
+		[]Keyrange{{0, 100}},
+		[]Keyrange{{50, 75}, {75, 100}},
+		[]bool{true, true},
+	},*/
 }
 
 func TestGet(t *testing.T) {
@@ -23,6 +34,7 @@ func TestGet(t *testing.T) {
 		// Get the key ranges from the range cache
 		for i, kr := range tt.keyrangeToGet {
 			_, ok := rc.Get(kr)
+			// log.Printf("Get(%v) = %v\n", kr, value) // visually see the range cache
 			if ok != tt.expectedOk[i] {
 				t.Fatalf("%s: range cache hit is %v, want %v", tt.description, ok, !ok)
 			}
@@ -30,6 +42,9 @@ func TestGet(t *testing.T) {
 	}
 }
 
+// generateValue is a helper function that associats the value of a
+// key range to a sequence of integers
+// from start to end, inclusive.
 func generateValue(kr Keyrange) []int {
 	total := kr.End - kr.Start
 	start := kr.Start
