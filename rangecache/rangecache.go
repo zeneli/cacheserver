@@ -35,6 +35,7 @@ func NewRangeCache(byteLimit int64) *RangeCache {
 }
 
 // Add associates a keyrange with a value and addes it to the range cache.
+// If the range cache is nil, then create one with a default size of 64 MB.
 func (rc *RangeCache) Add(keyrange Keyrange, value interface{}) {
 	if rc.rangecache == nil { // Guard against empty range cache.
 		rc = NewRangeCache(64000000) // 64MB default.
@@ -47,8 +48,15 @@ func (rc *RangeCache) Add(keyrange Keyrange, value interface{}) {
 	}
 
 	// Before Add, check storage constraints. Evict if not met.
-	nbytesReq := int64(len(value.([]int)) * 64)
+	var nbytesReq int64
+	switch value.(type) {
+	case []int:
+		nbytesReq = int64(len(value.([]int)) * 64)
+	case []byte:
+		nbytesReq = int64(len(value.([]byte)))
+	}
 	nbytesAvailable := rc.nbyteLimit - rc.nbytesUsed
+
 	// log.Printf("nbytesAvailable(%v) < nbytesReq(%v)\n", nbytesAvailable, nbytesReq)
 	for nbytesAvailable < nbytesReq {
 		rc.evict()
@@ -58,7 +66,12 @@ func (rc *RangeCache) Add(keyrange Keyrange, value interface{}) {
 	rc.rangecache[keyrange] = e
 
 	// Assume 64-bit architecture. int is 64 bits wide on 64-bit systems.
-	rc.nbytesUsed += int64(len(e.Value.(*item).value.([]int)) * 64)
+	switch value.(type) {
+	case []int:
+		rc.nbytesUsed += int64(len(e.Value.(*item).value.([]int)) * 64)
+	case []byte:
+		rc.nbytesUsed += int64(len(e.Value.(*item).value.([]byte)))
+	}
 	// log.Printf("nbytesUsed: %d\n", rc.nbytesUsed)
 }
 
@@ -123,7 +136,15 @@ func (rc *RangeCache) liesInRange(keyrange Keyrange) (*list.Element, interface{}
 		for end := range ends {
 			if starts[start] == ends[end] { // keyrange is inside cached range.
 				e := rc.rangecache[Keyrange{start, end}]
-				value := e.Value.(*item).value.([]int)[keyrange.Start : keyrange.End+1]
+				var value interface{}
+				switch e.Value.(*item).value.(type) {
+				case []int:
+					value = e.Value.(*item).value.([]int)[keyrange.Start : keyrange.End+1]
+				case []byte:
+					value = e.Value.(*item).value.([]byte)[keyrange.Start : keyrange.End+1]
+				default:
+					value = e.Value.(*item).value.([]byte)[keyrange.Start : keyrange.End+1]
+				}
 				// log.Printf("slice at [%d:%d] = %v\n\n", keyrange.Start, keyrange.End, value)
 				return e, value, true
 			}
