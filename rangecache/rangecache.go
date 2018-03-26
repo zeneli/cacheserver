@@ -15,6 +15,8 @@ type Keyrange struct{ Start, End int }
 type RangeCache struct {
 	lrulist    *list.List
 	rangecache map[Keyrange]*list.Element
+	nbytesUsed int64
+	nbyteLimit int64
 }
 
 type item struct {
@@ -22,28 +24,42 @@ type item struct {
 	value    interface{}
 }
 
-// New creates a new RangeCache.
-func New() *RangeCache {
+// NewRangeCache creates a new RangeCache.
+func NewRangeCache(byteLimit int64) *RangeCache {
 	return &RangeCache{
 		lrulist:    list.New(),
 		rangecache: make(map[Keyrange]*list.Element),
+		nbytesUsed: 0,
+		nbyteLimit: byteLimit,
 	}
 }
 
 // Add associates a keyrange with a value and addes it to the range cache.
 func (rc *RangeCache) Add(keyrange Keyrange, value interface{}) {
 	if rc.rangecache == nil { // Guard against empty range cache.
-		rc.lrulist = list.New()
-		rc.rangecache = make(map[Keyrange]*list.Element)
+		rc = NewRangeCache(64000000) // 64MB default.
 	}
+	// Cache hit.
 	if e, ok := rc.rangecache[keyrange]; ok {
 		rc.lrulist.MoveToFront(e)
 		e.Value.(*item).value = value
 		return
 	}
 
+	// Before Add, check storage constraints. Evict if not met.
+	nbytesReq := int64(len(value.([]int)) * 64)
+	nbytesAvailable := rc.nbyteLimit - rc.nbytesUsed
+	// log.Printf("nbytesAvailable(%v) < nbytesReq(%v)\n", nbytesAvailable, nbytesReq)
+	for nbytesAvailable < nbytesReq {
+		rc.evict()
+		nbytesAvailable = rc.nbyteLimit - rc.nbytesUsed
+	}
 	e := rc.lrulist.PushFront(&item{keyrange, value})
 	rc.rangecache[keyrange] = e
+
+	// Assume 64-bit architecture. int is 64 bits wide on 64-bit systems.
+	rc.nbytesUsed += int64(len(e.Value.(*item).value.([]int)) * 64)
+	// log.Printf("nbytesUsed: %d\n", rc.nbytesUsed)
 }
 
 // Get looks up a keyrange's value from the range cache.
@@ -63,10 +79,23 @@ func (rc *RangeCache) Get(keyrange Keyrange) (value interface{}, ok bool) {
 
 // Evict evicts the least recently used keyrange and value item from the range cache.
 // If an item was evicted successfully, we have the updated bytes used.
-func (rc *RangeCache) Evict() (bytesUsed int64, ok bool) { return 0, false }
+func (rc *RangeCache) evict() {
+	if rc.rangecache == nil {
+		return
+	}
+	e := rc.lrulist.Back()
+	if e != nil {
+		rc.lrulist.Remove(e)
+		item := e.Value.(*item)
+		delete(rc.rangecache, item.keyrange)
+		bFreed := int64(len(item.value.([]int)) * 64)
+		rc.nbytesUsed -= bFreed
+		// log.Printf("evicted %v, freed %d\n", item.keyrange, bFreed)
+	}
+}
 
 // BytesUsed returns the number of bytes used in the range cache.
-func (rc *RangeCache) BytesUsed() int64 { return 0 }
+func (rc *RangeCache) BytesUsed() int64 { return rc.nbytesUsed }
 
 // Len returns the number of items in the range cache.
 func (rc *RangeCache) Len() int { return 0 }

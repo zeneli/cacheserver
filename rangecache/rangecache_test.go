@@ -7,16 +7,25 @@ import (
 
 var incomingRanges = []struct {
 	description   string
+	nbyteLimit    int64
 	keyrangeToAdd []Keyrange
 	keyrangeToGet []Keyrange
 	expectedOk    []bool // corresponds to the keyrangeToGet slice
 }{
 	{"exact range match",
+		64000, // 64 KB
 		[]Keyrange{{0, 100}, {50, 75}, {75, 100}},
 		[]Keyrange{{0, 100}, {50, 75}, {75, 100}},
 		[]bool{true, true, true},
 	},
+	{"exact range match, evict lru keyrange element",
+		8484, // this will evict {0-100}
+		[]Keyrange{{0, 100}, {50, 75}, {75, 100}},
+		[]Keyrange{{0, 100}, {50, 75}, {75, 100}},
+		[]bool{false, true, true},
+	},
 	{"range overlap: range lies completely inside existing range",
+		64000,
 		[]Keyrange{{0, 100}},
 		[]Keyrange{{50, 75}, {75, 100}},
 		[]bool{true, true},
@@ -25,7 +34,7 @@ var incomingRanges = []struct {
 
 func TestGet(t *testing.T) {
 	for _, tt := range incomingRanges {
-		rc := New()
+		rc := NewRangeCache(tt.nbyteLimit)
 
 		//log.Println(tt.description)
 		// Add the key ranges to the range cache
