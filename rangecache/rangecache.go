@@ -101,7 +101,13 @@ func (rc *RangeCache) evict() {
 		rc.lrulist.Remove(e)
 		item := e.Value.(*item)
 		delete(rc.rangecache, item.keyrange)
-		bFreed := int64(len(item.value.([]int)) * 64)
+		var bFreed int64
+		switch item.value.(type) {
+		case []int:
+			bFreed = int64(len(item.value.([]int)) * 64)
+		case []byte:
+			bFreed = int64(len(item.value.([]byte)) * 64)
+		}
 		rc.nbytesUsed -= bFreed
 		// log.Printf("evicted %v, freed %d\n", item.keyrange, bFreed)
 	}
