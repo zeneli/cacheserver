@@ -2,6 +2,7 @@ package rangecache
 
 import (
 	"testing"
+	"time"
 )
 
 var incomingRanges = []struct {
@@ -15,30 +16,35 @@ var incomingRanges = []struct {
 		[]Keyrange{{0, 100}, {50, 75}, {75, 100}},
 		[]bool{true, true, true},
 	},
-	/*{"range overlap: range lies completely inside existing range",
+	{"range overlap: range lies completely inside existing range",
 		[]Keyrange{{0, 100}},
 		[]Keyrange{{50, 75}, {75, 100}},
 		[]bool{true, true},
-	},*/
+	},
 }
 
 func TestGet(t *testing.T) {
 	for _, tt := range incomingRanges {
 		rc := New()
 
+		//log.Println(tt.description)
 		// Add the key ranges to the range cache
 		for _, kr := range tt.keyrangeToAdd {
+			//start := time.Now()
 			rc.Add(kr, generateValue(kr))
+			//log.Printf("%s, Add(%v)\n", time.Since(start), kr)
 		}
 
 		// Get the key ranges from the range cache
 		for i, kr := range tt.keyrangeToGet {
+			//start := time.Now()
 			_, ok := rc.Get(kr)
-			// log.Printf("Get(%v) = %v\n", kr, value) // visually see the range cache
 			if ok != tt.expectedOk[i] {
 				t.Fatalf("%s: range cache hit is %v, want %v", tt.description, ok, !ok)
 			}
+			//log.Printf("%s, Get(%v)\n", time.Since(start), kr)
 		}
+		//log.Println()
 	}
 }
 
@@ -52,6 +58,7 @@ func generateValue(kr Keyrange) []int {
 	krValue := make([]int, total+1)
 	for i := 0; i <= total; i++ {
 		krValue[i] = start + i
+		time.Sleep(10 * time.Microsecond)
 	}
 	return krValue
 }
