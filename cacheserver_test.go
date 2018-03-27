@@ -21,11 +21,8 @@ func incomingRangeRequests() <-chan rangecache.Keyrange {
 			{0, 6400000},  // 6.4 MB
 			{0, 3200000},  // 3.2 MB
 			{0, 12800000}, // 12.8 MB
-			{0, 10800000}, // 10.8 MB
-			{0, 6400000},
-			{0, 3200000},
-			{0, 10800000},
-			{0, 12800000},
+			{0, 6400000}, {0, 3200000}, {0, 10800000}, {0, 12800000},
+			{0, 6400000}, {0, 3200000}, {0, 10800000}, {0, 12800000},
 		} {
 			ch <- keyrange
 		}
@@ -66,6 +63,13 @@ func testSequentialReal(t *testing.T, cs *CacheServer) {
 		log.Printf("time: %s: GetRange(%v), %d bytes", time.Since(start), kr, len(body))
 	}
 }
+func testSequentialRealDupSup(t *testing.T, cs *CacheServer) {
+	for kr := range incomingRangeRequests() {
+		start := time.Now()
+		body, _ := cs.GetRangeDupSup(url, kr)
+		log.Printf("time: %s: GetRange(%v), %d bytes", time.Since(start), kr, len(body))
+	}
+}
 
 // testConcurrentReal performs network requests using CacheServer.GetRange.
 func testConcurrentReal(t *testing.T, cs *CacheServer) {
@@ -80,6 +84,24 @@ func testConcurrentReal(t *testing.T, cs *CacheServer) {
 				return
 			}
 			log.Printf("time: %s: GetRange(%v), %d bytes", time.Since(start), keyrange, len(body))
+		}(kr)
+	}
+	n.Wait() // wait for all requests to be done
+}
+
+// testConcurrentRealDupSup performs network requests using CacheServer.GetRange.
+func testConcurrentRealDupSup(t *testing.T, cs *CacheServer) {
+	var n sync.WaitGroup
+	for kr := range incomingRangeRequests() {
+		n.Add(1) // add to wait group
+		go func(keyrange rangecache.Keyrange) {
+			defer n.Done() // defer done
+			start := time.Now()
+			body, ok := cs.GetRangeDupSup(url, keyrange)
+			if !ok {
+				return
+			}
+			log.Printf("time: %s: dupSupGetRange(%v), %d bytes", time.Since(start), keyrange, len(body))
 		}(kr)
 	}
 	n.Wait() // wait for all requests to be done
@@ -109,6 +131,21 @@ func testConcurrentFake(t *testing.T, cs *CacheServer) {
 	n.Wait() // wait for all requests to be done
 }
 
+// testConcurrentFake does not rely on network.
+func testConcurrentFakeDupSupression(t *testing.T, cs *CacheServer) {
+	var n sync.WaitGroup
+	for kr := range incomingRangeRequestsFake() {
+		n.Add(1) // add to wait group
+		go func(keyrange rangecache.Keyrange) {
+			defer n.Done() // defer done
+			start := time.Now()
+			body := getRangeValueDupSup(cs, keyrange)
+			log.Printf("time: %s: GetRange(%v), %d bytes", time.Since(start), keyrange, len(body))
+		}(kr)
+	}
+	n.Wait() // wait for all requests to be done
+}
+
 // getRangeValues mirrors CacheServer.GetRange, but stubs the network call
 // by calling the generateValue helper.
 func getRangeValue(cs *CacheServer, keyrange rangecache.Keyrange) []int {
@@ -127,6 +164,32 @@ func getRangeValue(cs *CacheServer, keyrange rangecache.Keyrange) []int {
 	return body
 }
 
+// getRangeValueDupSup mirrors CacheServer.GetRangeDupSup, but stubs the network calls
+// by calling the generateValue helper.
+func getRangeValueDupSup(cs *CacheServer, keyrange rangecache.Keyrange) []int {
+	cs.mu.Lock()
+	e := cs.dup[keyrange]
+	var body []int
+	if e == nil { // first request for this range
+		log.Printf("first request: %v\n", keyrange)
+		e = &entry{ready: make(chan struct{})}
+		cs.dup[keyrange] = e
+		cs.mu.Unlock()
+
+		// do work
+		body = generateValue(keyrange)
+		cs.add(keyrange, body)
+		//cs.cache.Add(keyrange, body)
+		close(e.ready)
+	} else { // repeated range request
+		log.Printf("repeated request: %v\n", keyrange)
+		cs.mu.Unlock()
+		<-e.ready // wait for ready
+	}
+	value, _ := cs.get(keyrange)
+	return value.([]int)
+}
+
 // generateValue is a helper function that associats the value of a
 // key range to a sequence of integers from start to end, inclusive.
 func generateValue(kr rangecache.Keyrange) []int {
@@ -136,7 +199,7 @@ func generateValue(kr rangecache.Keyrange) []int {
 	krValue := make([]int, total+1)
 	for i := 0; i <= total; i++ {
 		krValue[i] = start + i
-		time.Sleep(1 * time.Nanosecond)
+		time.Sleep(1 * time.Millisecond)
 	}
 	return krValue
 }
@@ -144,11 +207,17 @@ func generateValue(kr rangecache.Keyrange) []int {
 func TestSequentialReal(t *testing.T) {
 	cs := NewCacheServer(nbytesMax)
 	testSequentialReal(t, cs)
+	//testSequentialRealDupSup(t, cs)
 }
 
 func TestConcurrentReal(t *testing.T) {
 	cs := NewCacheServer(nbytesMax)
 	testConcurrentReal(t, cs)
+}
+
+func TestConcurrentRealDupSup(t *testing.T) {
+	cs := NewCacheServer(nbytesMax)
+	testConcurrentRealDupSup(t, cs)
 }
 
 func TestSequentialFake(t *testing.T) {
@@ -158,5 +227,6 @@ func TestSequentialFake(t *testing.T) {
 
 func TestConcurrentFake(t *testing.T) {
 	cs := NewCacheServer(nbytesMax)
-	testConcurrentFake(t, cs)
+	// testConcurrentFake(t, cs)
+	testConcurrentFakeDupSupression(t, cs)
 }
