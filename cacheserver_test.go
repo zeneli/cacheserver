@@ -9,10 +9,6 @@ import (
 	"github.com/zeneli/cacheserver/rangecache"
 )
 
-const url = "http://storage.googleapis.com/vimeo-test/work-at-vimeo.mp4"
-
-var nbytesMax int64 = 64000000 // 64 MB
-
 // incomingRangeRequests simulates a channel of range requests.
 func incomingRangeRequests() <-chan rangecache.Keyrange {
 	ch := make(chan rangecache.Keyrange)
@@ -55,7 +51,7 @@ func incomingRangeRequestsFake() <-chan rangecache.Keyrange {
 func testSequentialReal(t *testing.T, cs *CacheServer) {
 	for kr := range incomingRangeRequests() {
 		start := time.Now()
-		body, err := cs.GetRange(url, kr)
+		body, err := cs.GetRange(VIMEOURL, kr)
 		if err != nil {
 			log.Print(err)
 			continue
@@ -66,7 +62,7 @@ func testSequentialReal(t *testing.T, cs *CacheServer) {
 func testSequentialRealDupSup(t *testing.T, cs *CacheServer) {
 	for kr := range incomingRangeRequests() {
 		start := time.Now()
-		body, _ := cs.GetRangeDupSup(url, kr)
+		body, _ := cs.GetRangeDupSup(VIMEOURL, kr)
 		log.Printf("time: %s: GetRange(%v), %d bytes", time.Since(start), kr, len(body))
 	}
 }
@@ -79,7 +75,7 @@ func testConcurrentReal(t *testing.T, cs *CacheServer) {
 		go func(keyrange rangecache.Keyrange) {
 			defer n.Done() // defer done
 			start := time.Now()
-			body, err := cs.GetRange(url, keyrange)
+			body, err := cs.GetRange(VIMEOURL, keyrange)
 			if err != nil {
 				return
 			}
@@ -97,7 +93,7 @@ func testConcurrentRealDupSup(t *testing.T, cs *CacheServer) {
 		go func(keyrange rangecache.Keyrange) {
 			defer n.Done() // defer done
 			start := time.Now()
-			body, ok := cs.GetRangeDupSup(url, keyrange)
+			body, ok := cs.GetRangeDupSup(VIMEOURL, keyrange)
 			if !ok {
 				return
 			}
