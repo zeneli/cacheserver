@@ -1,12 +1,22 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net/http"
+	"net/url"
+	"strconv"
 	"sync"
 
 	"github.com/zeneli/cacheserver/rangecache"
+)
+
+const (
+	VIMEOURL = "http://storage.googleapis.com/vimeo-test/work-at-vimeo.mp4"
+	// sizes
+	nbytesMax = 64000000 // 64 MB
 )
 
 type entry struct {
@@ -33,7 +43,32 @@ func NewCacheServer(nbytes int64) *CacheServer {
 // a source url, start byte, and optional end byte.
 // Ensuring the associated url supports range requests.
 // And serve the requested range in a concurrently safe manner.
-func (cs *CacheServer) ServeHTTP(w http.ResponseWriter, r *http.Request) { return }
+func (cs *CacheServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// use VIDEOURL for testing
+	sourceURL := VIMEOURL
+	_, start, end, err := processRequiredQueryParams(r.URL.String())
+	if err != nil {
+		fmt.Fprintln(w, err)
+		return
+	}
+	contentLength, ok := checkHTTPRangeSupportAndLength(sourceURL)
+	if !ok {
+		fmt.Fprintln(w, "%s does not supports HTPP byte ranges", sourceURL)
+		return
+	}
+
+	if end > contentLength { // check end bound
+		end = contentLength
+	}
+
+	body, ok := cs.GetRangeDupSup(sourceURL, rangecache.Keyrange{int(start), int(end)})
+	if !ok {
+		fmt.Fprintln(w, "Couldn't get that")
+	}
+	w.Header().Add("Content-Type", "video/mp4")
+	w.Write(body)
+	return
+}
 
 // add is a wrapper around the caches add that is concurrency-safe.
 func (cs *CacheServer) add(keyrange rangecache.Keyrange, body interface{}) {
@@ -84,7 +119,7 @@ func (cs *CacheServer) GetRangeDupSup(url string, keyrange rangecache.Keyrange) 
 	if !ok {
 		return nil, false
 	}
-	//ioutil.WriteFile(rangeHeader+".mp4", v.([]byte), 0666)
+	ioutil.WriteFile(rangeHeader+".mp4", v.([]byte), 0666)
 	return v.([]byte), true
 }
 
@@ -132,13 +167,68 @@ func httpGetRangeRequest(url, rangeHeader string) ([]byte, error) {
 	return body, nil
 }
 
-func main() {
-	// Stub the source URL. Exercise cache hit and miss expectations.
-	// We log the times and save the video files.
-	url := "http://storage.googleapis.com/vimeo-test/work-at-vimeo.mp4"
-	cs := NewCacheServer(64000000) // 64 MB cache server
+// processRequiredQueryParams checks the given query URL and returns the query params
+// matching "url", "start", "end" (optional).
+func processRequiredQueryParams(queryURL string) (string, int64, int64, error) {
+	u, err := url.Parse(queryURL)
+	if err != nil {
+		return "", 0, 0, err
+	}
+	q := u.Query()
+	sourceURL := q.Get("url")
+	start := q.Get("start")
+	end := q.Get("end")
 
-	cs.GetRangeDupSup(url, rangecache.Keyrange{0, 6400000}) // 6.4 MB
-	cs.GetRangeDupSup(url, rangecache.Keyrange{0, 1600000}) // exact match; 1.6 MB
-	cs.GetRangeDupSup(url, rangecache.Keyrange{0, 3200000}) // overlapping match; 3.2 MB
+	if sourceURL == "" { // validate sourceUrl exists
+		return "", 0, 0, errors.New("query paramater url is required")
+	}
+	if start == "" { // validate start exists
+		return "", 0, 0, errors.New("query paramater start is required")
+	}
+	starti, err := strconv.Atoi(start)
+	if err != nil {
+		return "", 0, 0, err
+	}
+
+	if end == "" { // end query param is optional; default to 64 KB after starti
+		end += fmt.Sprintf("%d", starti+64000)
+	}
+	endi, err := strconv.Atoi(end)
+	if err != nil {
+		return "", 0, 0, err
+	}
+
+	return sourceURL, int64(starti), int64(endi), nil
+}
+
+// checkHTTPRangeSupportAndLength does an HTTP head request to the sourceURL and checks
+// if it supports HTTP byte ranges. Also returns the content length for bounds checking.
+func checkHTTPRangeSupportAndLength(sourceURL string) (contentLength int64, ok bool) {
+	client := &http.Client{}
+	resp, err := client.Head(sourceURL)
+	if err != nil {
+		return 0, false
+	}
+	for _, rangeSupport := range resp.Header["Accept-Ranges"] {
+		if rangeSupport == "bytes" { // supports HTTP byte ranges
+			// HTTP header for Content-Length
+			contentLength, err := strconv.Atoi(resp.Header["Content-Length"][0])
+			if err != nil {
+				return 0, false
+			}
+			return int64(contentLength), true
+		} else {
+			return 0, false
+		}
+	} // fell through
+	return 0, false
+}
+
+func main() {
+	cacheserver := NewCacheServer(nbytesMax) // 64 MB cache server
+	s := &http.Server{
+		Addr:    ":8080",
+		Handler: cacheserver,
+	}
+	log.Fatal(s.ListenAndServe())
 }
