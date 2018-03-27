@@ -104,7 +104,7 @@ func (rc *RangeCache) evict() {
 		case []int:
 			bFreed = int64(len(item.value.([]int)) * 64)
 		case []byte:
-			bFreed = int64(len(item.value.([]byte)) * 64)
+			bFreed = int64(len(item.value.([]byte)))
 		}
 		rc.nbytesUsed -= bFreed
 	}
