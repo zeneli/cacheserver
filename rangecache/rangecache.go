@@ -11,7 +11,6 @@ type Keyrange struct{ Start, End int }
 
 // RangeCache is a LRU range-based cache.
 // RangeCache is not safe for concurrent accesses.
-// TODO: add descriptions of cases for get and add overlaps.
 type RangeCache struct {
 	lrulist    *list.List
 	rangecache map[Keyrange]*list.Element
@@ -90,8 +89,7 @@ func (rc *RangeCache) Get(keyrange Keyrange) (value interface{}, ok bool) {
 	return nil, false
 }
 
-// Evict evicts the least recently used keyrange and value item from the range cache.
-// If an item was evicted successfully, we have the updated bytes used.
+// evict evicts the least recently used keyrange and value item from the range cache.
 func (rc *RangeCache) evict() {
 	if rc.rangecache == nil {
 		return
@@ -109,15 +107,11 @@ func (rc *RangeCache) evict() {
 			bFreed = int64(len(item.value.([]byte)) * 64)
 		}
 		rc.nbytesUsed -= bFreed
-		// log.Printf("evicted %v, freed %d\n", item.keyrange, bFreed)
 	}
 }
 
 // BytesUsed returns the number of bytes used in the range cache.
 func (rc *RangeCache) BytesUsed() int64 { return rc.nbytesUsed }
-
-// Len returns the number of items in the range cache.
-func (rc *RangeCache) Len() int { return 0 }
 
 func (rc *RangeCache) liesInRange(keyrange Keyrange) (*list.Element, interface{}, bool) {
 	if rc.rangecache == nil {
