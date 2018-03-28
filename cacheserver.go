@@ -53,7 +53,7 @@ func (cs *CacheServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	contentLength, ok := checkHTTPRangeSupportAndLength(sourceURL)
 	if !ok {
-		fmt.Fprintln(w, "%s does not supports HTPP byte ranges", sourceURL)
+		fmt.Fprintf(w, "%s does not supports HTPP byte ranges", sourceURL)
 		return
 	}
 
@@ -159,6 +159,9 @@ func httpGetRangeRequest(url, rangeHeader string) ([]byte, error) {
 	req.Header.Add("Range", rangeHeader)
 
 	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
 	defer resp.Body.Close()
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
