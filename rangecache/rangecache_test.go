@@ -1,6 +1,7 @@
 package rangecache
 
 import (
+	"log"
 	"testing"
 	"time"
 )
@@ -36,24 +37,24 @@ func TestGet(t *testing.T) {
 	for _, tt := range incomingRanges {
 		rc := NewRangeCache(tt.nbyteLimit)
 
-		//log.Println(tt.description)
+		log.Println(tt.description)
 		// Add the key ranges to the range cache
 		for _, kr := range tt.keyrangeToAdd {
-			//start := time.Now()
+			start := time.Now()
 			rc.Add(kr, generateValue(kr))
-			//log.Printf("%s, Add(%v)\n", time.Since(start), kr)
+			log.Printf("%s, Add(%v)\n", time.Since(start), kr)
 		}
 
 		// Get the key ranges from the range cache
 		for i, kr := range tt.keyrangeToGet {
-			//start := time.Now()
+			start := time.Now()
 			_, ok := rc.Get(kr)
 			if ok != tt.expectedOk[i] {
 				t.Fatalf("%s: range cache hit is %v, want %v", tt.description, ok, !ok)
 			}
-			//log.Printf("%s, Get(%v)\n", time.Since(start), kr)
+			log.Printf("%s, Get(%v)\n", time.Since(start), kr)
 		}
-		//log.Println()
+		log.Println()
 	}
 }
 

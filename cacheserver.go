@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/zeneli/cacheserver/rangecache"
 )
@@ -61,9 +62,9 @@ func (cs *CacheServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		end = contentLength
 	}
 
-	body, ok := cs.GetRangeDupSup(sourceURL, rangecache.Keyrange{int(start), int(end)})
-	if !ok {
-		fmt.Fprintln(w, "Couldn't get that")
+	body, err := cs.GetRange(sourceURL, rangecache.Keyrange{int(start), int(end)})
+	if err != nil {
+		log.Println(err)
 	}
 	w.Header().Add("Content-Type", "video/mp4")
 	w.Write(body)
@@ -95,6 +96,7 @@ func (cs *CacheServer) get(keyrange rangecache.Keyrange) (interface{}, bool) {
 func (cs *CacheServer) GetRangeDupSup(url string, keyrange rangecache.Keyrange) ([]byte, bool) {
 	cs.mu.Lock()
 	rangeHeader := fmt.Sprintf("bytes=%d-%d", keyrange.Start, keyrange.End)
+
 	e := cs.dup[keyrange]
 	if e == nil { // first request for this keyrange
 		e = &entry{ready: make(chan struct{})}
@@ -126,14 +128,14 @@ func (cs *CacheServer) GetRangeDupSup(url string, keyrange rangecache.Keyrange) 
 // GetRange checks the cache for keyrange, otherwise does an HTTP range request.
 // GetRange is concurrency-safe.
 func (cs *CacheServer) GetRange(url string, keyrange rangecache.Keyrange) ([]byte, error) {
-	//timeStart := time.Now()
+	timeStart := time.Now()
 	rangeHeader := fmt.Sprintf("bytes=%d-%d", keyrange.Start, keyrange.End)
 
 	v, ok := cs.get(keyrange)
 	if ok { // cache hit
 		body := v.([]byte)
-		//ioutil.WriteFile(rangeHeader+".mp4", v.([]byte), 0x777) // write to file
-		//log.Printf("cache hit: %s, GET: %s\n", time.Since(timeStart), rangeHeader)
+		ioutil.WriteFile(rangeHeader+".mp4", v.([]byte), 0x777) // write to file
+		log.Printf("cache hit: %s, GET: %s\n", time.Since(timeStart), rangeHeader)
 		return body, nil
 	}
 
@@ -143,8 +145,8 @@ func (cs *CacheServer) GetRange(url string, keyrange rangecache.Keyrange) ([]byt
 		return nil, err
 	}
 	cs.add(keyrange, body)
-	// ioutil.WriteFile(rangeHeader+".mp4", []byte(string(body)), 0666)
-	// log.Printf("cache miss: %s, GET: %s\n", time.Since(timeStart), rangeHeader)
+	ioutil.WriteFile(rangeHeader+".mp4", []byte(string(body)), 0666)
+	log.Printf("cache miss: %s, GET: %s\n", time.Since(timeStart), rangeHeader)
 	return body, nil
 }
 
