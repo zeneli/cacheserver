@@ -28,8 +28,20 @@ var incomingRanges = []struct {
 	{"range overlap: range lies completely inside existing range",
 		64000,
 		[]Keyrange{{0, 100}},
-		[]Keyrange{{50, 75}, {75, 100}},
-		[]bool{true, true},
+		[]Keyrange{{1, 100}, {0, 99}, {50, 75}, {75, 100}},
+		[]bool{true, true, true, true},
+	},
+	{"range overlap: range lies one off existing range (off by one in)",
+		64000,
+		[]Keyrange{{50, 75}},
+		[]Keyrange{{49, 75}, {50, 76}},
+		[]bool{false, false},
+	},
+	{"range overlap: range lies partially in existing range (off by one out)",
+		64000,
+		[]Keyrange{{50, 100}},
+		[]Keyrange{{0, 50}, {30, 80}, {90, 105}, {95, 110}},
+		[]bool{false, false, false, false},
 	},
 }
 
@@ -40,21 +52,16 @@ func TestGet(t *testing.T) {
 		log.Println(tt.description)
 		// Add the key ranges to the range cache
 		for _, kr := range tt.keyrangeToAdd {
-			start := time.Now()
 			rc.Add(kr, generateValue(kr))
-			log.Printf("%s, Add(%v)\n", time.Since(start), kr)
 		}
 
 		// Get the key ranges from the range cache
 		for i, kr := range tt.keyrangeToGet {
-			start := time.Now()
 			_, ok := rc.Get(kr)
 			if ok != tt.expectedOk[i] {
 				t.Fatalf("%s: range cache hit is %v, want %v", tt.description, ok, !ok)
 			}
-			log.Printf("%s, Get(%v)\n", time.Since(start), kr)
 		}
-		log.Println()
 	}
 }
 
